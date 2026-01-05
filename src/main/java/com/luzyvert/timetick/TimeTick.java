@@ -6,11 +6,10 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.block.*;
 import net.minecraft.server.world.ChunkLevelType;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
-import net.minecraft.world.rule.GameRules;
+import net.minecraft.world.GameRules;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,16 +29,15 @@ public class TimeTick implements ModInitializer {
 	public void onInitialize() {
 		LOGGER.info("TimeTick initializing");
 
-		//ServerChunkEvents.CHUNK_UNLOAD.register(this::SaveChunkTime);
+		ServerChunkEvents.CHUNK_UNLOAD.register(this::SaveChunkTime);
 
-		//ServerChunkEvents.CHUNK_LOAD.register(this::TickChunk);
+		ServerChunkEvents.CHUNK_LOAD.register(this::TickChunk);
 
-		ServerChunkEvents.CHUNK_LEVEL_TYPE_CHANGE.register( (world, chunk, oldLevelType, newLevelType) -> {
+		/*ServerChunkEvents.CHUNK_LEVEL_TYPE_CHANGE.register( (world, chunk, oldLevelType, newLevelType) -> {
 			if(chunk.getPos().x != 0 || chunk.getPos().z != 0)
 				return;
 
 			LOGGER.info("CHUNK_LEVEL_TYPE_CHANGE: {} (Ticking: {}), old: {} -> new: {}", chunk.getPos(), IsBlockTicking(newLevelType), oldLevelType, newLevelType);
-
 
 			if(IsBlockTicking(newLevelType)) {
 				TickChunk(world, chunk);
@@ -47,7 +45,7 @@ public class TimeTick implements ModInitializer {
 			}
 
 			SaveChunkTime(world, chunk);
-		});
+		});*/
 
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			if (TASK_QUEUE.isEmpty()) return;
@@ -131,7 +129,7 @@ public class TimeTick implements ModInitializer {
 			if (ticksPassed > 0) {
 				LOGGER.info("Chunk {} loaded after {} ticks. Processing {} blocks.", chunkKey, ticksPassed, data.positions.size());
 
-				int randomTickSpeed = world.getGameRules().getValue(GameRules.RANDOM_TICK_SPEED);
+				int randomTickSpeed = world.getGameRules().getInt(GameRules.RANDOM_TICK_SPEED);
 
 				float expectedTicks = ticksPassed * (randomTickSpeed / 4096.0f);
 				int baseCalls = (int) expectedTicks;

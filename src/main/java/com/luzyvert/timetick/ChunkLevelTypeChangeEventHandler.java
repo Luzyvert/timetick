@@ -1,4 +1,5 @@
-package PACKAGE_NAME;
+package com.luzyvert.timetick;
 
 public class ChunkLevelTypeChangeEventHandler {
+
 }
