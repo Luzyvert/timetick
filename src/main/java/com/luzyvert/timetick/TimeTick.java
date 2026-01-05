@@ -33,11 +33,11 @@ public class TimeTick implements ModInitializer {
 
 		ServerChunkEvents.CHUNK_LOAD.register(this::TickChunk);
 
-		/*ServerChunkEvents.CHUNK_LEVEL_TYPE_CHANGE.register( (world, chunk, oldLevelType, newLevelType) -> {
-			if(chunk.getPos().x != 0 || chunk.getPos().z != 0)
+		ChunkLevelEvents.CHUNK_LEVEL_TYPE_CHANGE.register( (world, chunk, oldLevelType, newLevelType) -> {
+			if(chunk == null)
 				return;
 
-			LOGGER.info("CHUNK_LEVEL_TYPE_CHANGE: {} (Ticking: {}), old: {} -> new: {}", chunk.getPos(), IsBlockTicking(newLevelType), oldLevelType, newLevelType);
+			//LOGGER.info("CHUNK_LEVEL_TYPE_CHANGE: {} (Ticking: {}), old: {} -> new: {}", chunk.getPos(), IsBlockTicking(newLevelType), oldLevelType, newLevelType);
 
 			if(IsBlockTicking(newLevelType)) {
 				TickChunk(world, chunk);
@@ -45,7 +45,7 @@ public class TimeTick implements ModInitializer {
 			}
 
 			SaveChunkTime(world, chunk);
-		});*/
+		});
 
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			if (TASK_QUEUE.isEmpty()) return;
@@ -83,7 +83,7 @@ public class TimeTick implements ModInitializer {
 		if(IsBlockTicking(chunk.getLevelType()) || CHUNK_CACHE.containsKey(chunk.getPos().toString()))
 			return;
 
-		LOGGER.info("Saving chunk time for {}", chunk.getPos());
+		//LOGGER.info("Saving chunk time for {}", chunk.getPos());
 		List<BlockPos> growingBlocks = new ArrayList<>();
 		ChunkSection[] sections = chunk.getSectionArray();
 
