@@ -50,30 +50,22 @@ public class TimeTick implements ModInitializer {
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			if (TASK_QUEUE.isEmpty()) return;
 
-			Instant time = Instant.now();
-			try (ExitAction exitAction = new ExitAction(() -> {
-				long seconds = Duration.between(time, Instant.now()).toMillis();
-				LOGGER.info("SERVER_TICK: {} ms", seconds);
-			})) {
-				long startTime = System.nanoTime();
-				int operations = 0;
-				long MAX_TIME_NS = 35_000_000;
+			long startTime = System.nanoTime();
+			long MAX_TIME_NS = 35_000_000;
 
-				while (!TASK_QUEUE.isEmpty()) {
-					Runnable task = TASK_QUEUE.poll();
-					if (task != null) {
-						try {
-							task.run();
-						} catch (Exception e) {
-							LOGGER.error("Error processing growth task", e);
-						}
-						operations++;
+			while (!TASK_QUEUE.isEmpty()) {
+				Runnable task = TASK_QUEUE.poll();
+				if (task != null) {
+					try {
+						task.run();
+					} catch (Exception e) {
+						LOGGER.error("Error processing growth task", e);
 					}
+				}
 
-					if (System.nanoTime() - startTime > MAX_TIME_NS) {
-						LOGGER.info("Leaving growth tasks for next server tick, tick is taking too long");
-						break;
-					}
+				if (System.nanoTime() - startTime > MAX_TIME_NS) {
+					LOGGER.info("Leaving growth tasks for next server tick, tick is taking too long");
+					break;
 				}
 			}
 		});
@@ -127,7 +119,7 @@ public class TimeTick implements ModInitializer {
 			CHUNK_CACHE.remove(chunkKey);
 
 			if (ticksPassed > 0) {
-				LOGGER.info("Chunk {} loaded after {} ticks. Processing {} blocks.", chunkKey, ticksPassed, data.positions.size());
+				//LOGGER.info("Chunk {} loaded after {} ticks. Processing {} blocks.", chunkKey, ticksPassed, data.positions.size());
 
 				int randomTickSpeed = world.getGameRules().getInt(GameRules.RANDOM_TICK_SPEED);
 
