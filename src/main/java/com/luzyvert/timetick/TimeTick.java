@@ -8,9 +8,9 @@ import net.minecraft.block.CropBlock;
 import net.minecraft.block.SaplingBlock;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.GameRules;
 import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
-import net.minecraft.world.rule.GameRules;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,7 +76,7 @@ public class TimeTick implements ModInitializer {
 				if (ticksPassed > 0) {
 					LOGGER.info("Chunk {} loaded after {} ticks. Processing {} blocks.", chunkKey, ticksPassed, data.positions.size());
 
-					int randomTickSpeed = world.getGameRules().getValue(GameRules.RANDOM_TICK_SPEED);
+					int randomTickSpeed = world.getGameRules().getInt(GameRules.RANDOM_TICK_SPEED);
 
 					float expectedTicks = ticksPassed * (randomTickSpeed / 4096.0f);
 					int baseCalls = (int) expectedTicks;
