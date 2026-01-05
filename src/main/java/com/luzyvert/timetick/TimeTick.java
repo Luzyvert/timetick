@@ -5,15 +5,17 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.CropBlock;
-import net.minecraft.block.Fertilizable;
 import net.minecraft.block.SaplingBlock;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.world.rule.GameRules;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -21,19 +23,18 @@ public class TimeTick implements ModInitializer {
 	public static final String MOD_ID = "timetick";
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-	// Stores: Chunk Key -> Data (Unload Tick + List of BlockPos)
 	public static final HashMap<String, CachedChunkData> CHUNK_CACHE = new HashMap<>();
-
 	private static final Queue<Runnable> TASK_QUEUE = new ConcurrentLinkedQueue<>();
 
 	@Override
 	public void onInitialize() {
-		LOGGER.info("TimeTick initialized: Using In-Game Time strategy.");
+		LOGGER.info("TimeTick initializing");
 
-		// 1. EVENT: CHUNK UNLOAD
 		ServerChunkEvents.CHUNK_UNLOAD.register((ServerWorld world, WorldChunk chunk) -> {
 			List<BlockPos> growingBlocks = new ArrayList<>();
 			ChunkSection[] sections = chunk.getSectionArray();
+
+			LOGGER.info("Time: {}", world.getTime());
 
 			for (int i = 0; i < sections.length; i++) {
 				ChunkSection section = sections[i];
@@ -59,54 +60,68 @@ public class TimeTick implements ModInitializer {
 				}
 
 				if (!growingBlocks.isEmpty()) {
-					// STORE CURRENT WORLD TICK
 					CHUNK_CACHE.put(chunk.getPos().toString(), new CachedChunkData(world.getTime(), growingBlocks));
 				}
-			});
+			}
+		});
 
-			// 2. EVENT: CHUNK LOAD
-			ServerChunkEvents.CHUNK_LOAD.register((ServerWorld world, WorldChunk chunk) -> {
-				String chunkKey = chunk.getPos().toString();
+		ServerChunkEvents.CHUNK_LOAD.register((ServerWorld world, WorldChunk chunk) -> {
+			String chunkKey = chunk.getPos().toString();
 
-				if (CHUNK_CACHE.containsKey(chunkKey)) {
-					CachedChunkData data = CHUNK_CACHE.get(chunkKey);
+			if (CHUNK_CACHE.containsKey(chunkKey)) {
+				CachedChunkData data = CHUNK_CACHE.get(chunkKey);
+				long currentTick = world.getTime();
+				long ticksPassed = currentTick - data.tickTime;
 
-					// CALCULATE TICKS PASSED
-					long currentTick = world.getTime();
-					long ticksPassed = currentTick - data.unloadTick;
+				CHUNK_CACHE.remove(chunkKey);
 
-					CHUNK_CACHE.remove(chunkKey);
+				if (ticksPassed > 0) {
+					LOGGER.info("Chunk {} loaded after {} ticks. Processing {} blocks.", chunkKey, ticksPassed, data.positions.size());
 
-					// 100 ticks = 5 seconds
-					if (ticksPassed > 100) {
-						LOGGER.info("Chunk {} loaded after {} ticks. Processing blocks.", chunkKey, ticksPassed);
+					int randomTickSpeed = world.getGameRules().getValue(GameRules.RANDOM_TICK_SPEED);
 
-						for (BlockPos pos : data.positions) {
-							TASK_QUEUE.add(() -> {
-								BlockState currentState = world.getBlockState(pos);
-								if (currentState.getBlock() instanceof Fertilizable fertilizable) {
-									if (fertilizable.isFertilizable(world, pos, currentState, false)) {
-										// Optional: You can now use 'ticksPassed' to calculate how many times to grow
-										// e.g. int growthCycles = (int) (ticksPassed / 24000); // Once per Minecraft day?
-										if (fertilizable.canGrow(world, world.random, pos, currentState)) {
-											fertilizable.grow(world, world.random, pos, currentState);
-										}
+					float expectedTicks = ticksPassed * (randomTickSpeed / 4096.0f);
+					int baseCalls = (int) expectedTicks;
+					float chanceForExtra = expectedTicks - baseCalls;
+
+					for (BlockPos pos : data.positions) {
+						TASK_QUEUE.add(() -> {
+							BlockState currentState = world.getBlockState(pos);
+
+							if (currentState.getBlock() instanceof SaplingBlock || currentState.getBlock() instanceof CropBlock) {
+								int calls = baseCalls;
+								if (world.random.nextFloat() < chanceForExtra) {
+									calls++;
+								}
+
+								for (int i = 0; i < calls; i++) {
+									// Re-check state inside the loop in case the block broke or changed during previous random ticks
+									BlockState stateInLoop = world.getBlockState(pos);
+									if (stateInLoop.getBlock() instanceof SaplingBlock || stateInLoop.getBlock() instanceof CropBlock) {
+										stateInLoop.randomTick(world, pos, world.random);
+									} else {
+										break;
 									}
 								}
-							});
-						}
+							}
+						});
 					}
 				}
-			});
+			}
+		});
 
-			// 3. EVENT: END SERVER TICK
-			ServerTickEvents.END_SERVER_TICK.register(server -> {
-				if (TASK_QUEUE.isEmpty()) return;
+		ServerTickEvents.END_SERVER_TICK.register(server -> {
+			if (TASK_QUEUE.isEmpty()) return;
 
+			Instant time = Instant.now();
+			try (ExitAction exitAction = new ExitAction(() -> {
+				long seconds = Duration.between(time, Instant.now()).toMillis();
+				LOGGER.info("SERVER_TICK: {} ms", seconds);
+			})) {
 				int operations = 0;
-				int MAX_OPERATIONS_PER_TICK = 10;
+				int MAX_OPERATIONS_PER_TICK = 50;
 
-				while (!TASK_QUEUE.isEmpty() && operations < MAX_OPERATIONS_PER_TICK) {
+				while (!TASK_QUEUE.isEmpty()) {
 					Runnable task = TASK_QUEUE.poll();
 					if (task != null) {
 						try {
@@ -117,16 +132,9 @@ public class TimeTick implements ModInitializer {
 						operations++;
 					}
 				}
-			});
-		}
-
-		public static class CachedChunkData {
-			public long unloadTick; // Changed from Instant to long
-			public List<BlockPos> positions;
-
-			public CachedChunkData(long unloadTick, List<BlockPos> positions) {
-				this.unloadTick = unloadTick;
-				this.positions = positions;
 			}
-		}
+		});
 	}
+
+
+}
