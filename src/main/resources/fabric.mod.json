@@ -3,7 +3,7 @@
 	"id": "timetick",
 	"version": "${version}",
 	"name": "TimeTick",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "This mod saves and simulates the time passed on an unloaded chunk. Trees and crops will be grown when you come back to a chunk after a long time",
 	"authors": [
 		"Luzyvert"
 	],
@@ -20,6 +20,14 @@
 		],
 		"fabric-datagen": [
 			"com.luzyvert.timetick.TimeTickDataGenerator"
+		],
+		"cardinal-components-chunk": [
+			"com.luzyvert.timetick.TimeTickChunkComponents"
+		]
+	},
+	"custom": {
+		"cardinal-components": [
+			"timetick:cached_chunk_data"
 		]
 	},
 	"mixins": [

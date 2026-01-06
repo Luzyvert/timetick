@@ -6,7 +6,6 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.block.*;
 import net.minecraft.server.world.ChunkLevelType;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
@@ -14,8 +13,6 @@ import net.minecraft.world.rule.GameRules;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -23,24 +20,23 @@ public class TimeTick implements ModInitializer {
 	public static final String MOD_ID = "timetick";
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-	public static final HashMap<String, CachedChunkData> CHUNK_CACHE = new HashMap<>();
 	private static final Queue<Runnable> TASK_QUEUE = new ConcurrentLinkedQueue<>();
 
 	@Override
 	public void onInitialize() {
 		LOGGER.info("TimeTick initializing");
 
-		//ServerChunkEvents.CHUNK_UNLOAD.register(this::SaveChunkTime);
-
-		//ServerChunkEvents.CHUNK_LOAD.register(this::TickChunk);
-
-		ServerChunkEvents.CHUNK_LEVEL_TYPE_CHANGE.register( (world, chunk, oldLevelType, newLevelType) -> {
-			if(IsBlockTicking(newLevelType)) {
-				TickChunk(world, chunk);
+		ServerChunkEvents.CHUNK_LEVEL_TYPE_CHANGE.register((world, chunk, oldLevelType, newLevelType) -> {
+			if (IsBlockTicking(newLevelType)) {
+				if (chunk instanceof WorldChunk worldChunk) {
+					TickChunk(world, worldChunk);
+				}
 				return;
 			}
 
-			SaveChunkTime(world, chunk);
+			if (chunk instanceof WorldChunk worldChunk) {
+				SaveChunkTime(world, worldChunk);
+			}
 		});
 
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -60,7 +56,6 @@ public class TimeTick implements ModInitializer {
 				}
 
 				if (System.nanoTime() - startTime > MAX_TIME_NS) {
-					LOGGER.info("Leaving growth tasks for next server tick, tick is taking too long");
 					break;
 				}
 			}
@@ -68,10 +63,10 @@ public class TimeTick implements ModInitializer {
 	}
 
 	private void SaveChunkTime(ServerWorld world, WorldChunk chunk) {
-		if(IsBlockTicking(chunk.getLevelType()) || CHUNK_CACHE.containsKey(chunk.getPos().toString()))
-			return;
+		if (IsBlockTicking(chunk.getLevelType())) return;
 
-		//LOGGER.info("Saving chunk time for {}", chunk.getPos());
+		CachedChunkData data = TimeTickComponents.CHUNK_DATA.get(chunk);
+
 		List<BlockPos> growingBlocks = new ArrayList<>();
 		ChunkSection[] sections = chunk.getSectionArray();
 
@@ -97,65 +92,73 @@ public class TimeTick implements ModInitializer {
 					}
 				}
 			}
+		}
 
-			if (!growingBlocks.isEmpty()) {
-				CHUNK_CACHE.put(chunk.getPos().toString(), new CachedChunkData(world.getTime(), growingBlocks));
-			}
+		if (!growingBlocks.isEmpty()) {
+			data.tickTime = world.getTime();
+			data.positions.clear();
+			data.positions.addAll(growingBlocks);
+
+			TimeTickComponents.CHUNK_DATA.sync(chunk);
 		}
 	}
 
 	private void TickChunk(ServerWorld world, WorldChunk chunk) {
-		String chunkKey = chunk.getPos().toString();
+		CachedChunkData data = TimeTickComponents.CHUNK_DATA.get(chunk);
 
-		if (CHUNK_CACHE.containsKey(chunkKey)) {
-			CachedChunkData data = CHUNK_CACHE.get(chunkKey);
-			long currentTick = world.getTime();
-			long ticksPassed = currentTick - data.tickTime;
+		long currentTick = world.getTime();
+		long lastSavedTime = data.tickTime;
 
-			CHUNK_CACHE.remove(chunkKey);
+		if (lastSavedTime <= 0) {
+			data.tickTime = currentTick;
+			return;
+		}
 
-			if (ticksPassed > 0) {
-				//LOGGER.info("Chunk {} loaded after {} ticks. Processing {} blocks.", chunkKey, ticksPassed, data.positions.size());
+		long ticksPassed = currentTick - lastSavedTime;
 
-				int randomTickSpeed = world.getGameRules().getValue(GameRules.RANDOM_TICK_SPEED);
+		data.tickTime = currentTick;
 
-				float expectedTicks = ticksPassed * (randomTickSpeed / 4096.0f);
-				int baseCalls = (int) expectedTicks;
-				float chanceForExtra = expectedTicks - baseCalls;
+		if (ticksPassed > 0 && !data.positions.isEmpty()) {
 
-				for (BlockPos pos : data.positions) {
-					TASK_QUEUE.add(() -> {
-						BlockState currentState = world.getBlockState(pos);
+			int randomTickSpeed = world.getGameRules().getValue(GameRules.RANDOM_TICK_SPEED);
+			float expectedTicks = ticksPassed * (randomTickSpeed / 4096.0f);
+			int baseCalls = (int) expectedTicks;
+			float chanceForExtra = expectedTicks - baseCalls;
 
-						if (shouldTrackBlock(currentState.getBlock())) {
-							int calls = baseCalls;
-							if (world.random.nextFloat() < chanceForExtra) {
-								calls++;
-							}
+			List<BlockPos> blocksToTick = new ArrayList<>(data.positions);
 
-							for (int i = 0; i < calls; i++) {
-								// Re-check state inside the loop in case the block broke or changed during previous random ticks
-								BlockState stateInLoop = world.getBlockState(pos);
-								if (shouldTrackBlock(stateInLoop.getBlock())) {
-									stateInLoop.randomTick(world, pos, world.random);
-								} else {
-									break;
-								}
+			for (BlockPos pos : blocksToTick) {
+				TASK_QUEUE.add(() -> {
+					if (!world.isChunkLoaded(pos)) return;
+
+					BlockState currentState = world.getBlockState(pos);
+
+					if (shouldTrackBlock(currentState.getBlock())) {
+						int calls = baseCalls;
+						if (world.random.nextFloat() < chanceForExtra) {
+							calls++;
+						}
+
+						for (int i = 0; i < calls; i++) {
+							BlockState stateInLoop = world.getBlockState(pos);
+							if (shouldTrackBlock(stateInLoop.getBlock())) {
+								stateInLoop.randomTick(world, pos, world.random);
+							} else {
+								break;
 							}
 						}
-					});
-				}
+					}
+				});
 			}
 		}
 	}
 
-	private boolean IsBlockTicking(ChunkLevelType type)
-	{
+	private boolean IsBlockTicking(ChunkLevelType type) {
 		return type == ChunkLevelType.BLOCK_TICKING || type == ChunkLevelType.ENTITY_TICKING;
 	}
 
 	private boolean shouldTrackBlock(Block block) {
-		return     block instanceof CropBlock
+		return block instanceof CropBlock
 				|| block instanceof SaplingBlock
 				|| block instanceof StemBlock
 				|| block instanceof CocoaBlock
