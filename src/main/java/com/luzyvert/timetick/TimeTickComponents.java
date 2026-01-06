@@ -1,8 +1,8 @@
 package com.luzyvert.timetick;
 
 import net.minecraft.util.Identifier;
-import org.ladysnake.cca.api.v3.component.ComponentKey;
-import org.ladysnake.cca.api.v3.component.ComponentRegistry;
+import dev.onyxstudios.cca.api.v3.component.ComponentKey;
+import dev.onyxstudios.cca.api.v3.component.ComponentRegistry;
 
 public class TimeTickComponents {
     public static final ComponentKey<CachedChunkData> CHUNK_DATA =

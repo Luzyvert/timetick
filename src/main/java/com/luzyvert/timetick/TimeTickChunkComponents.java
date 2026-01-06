@@ -1,7 +1,7 @@
 package com.luzyvert.timetick;
 
-import org.ladysnake.cca.api.v3.chunk.ChunkComponentFactoryRegistry;
-import org.ladysnake.cca.api.v3.chunk.ChunkComponentInitializer;
+import dev.onyxstudios.cca.api.v3.chunk.ChunkComponentFactoryRegistry;
+import dev.onyxstudios.cca.api.v3.chunk.ChunkComponentInitializer;
 
 import java.util.ArrayList;
 

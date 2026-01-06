@@ -41,9 +41,7 @@ public class TimeTick implements ModInitializer {
 				return;
 			}
 
-			if (chunk instanceof WorldChunk worldChunk) {
-				SaveChunkTime(world, worldChunk);
-			}
+			SaveChunkTime(world, chunk);
 		});
 
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -74,7 +72,7 @@ public class TimeTick implements ModInitializer {
 
 		CachedChunkData data = TimeTickComponents.CHUNK_DATA.get(chunk);
 
-		//LOGGER.info("Saving chunk time for {}", chunk.getPos());
+		LOGGER.info("Saving chunk time for {}", chunk.getPos());
 		List<BlockPos> growingBlocks = new ArrayList<>();
 		ChunkSection[] sections = chunk.getSectionArray();
 
@@ -127,8 +125,8 @@ public class TimeTick implements ModInitializer {
 		data.tickTime = currentTick;
 
 		if (ticksPassed > 0 && !data.positions.isEmpty()) {
-
-			int randomTickSpeed = world.getGameRules().getValue(GameRules.RANDOM_TICK_SPEED);
+			LOGGER.info("Chunk {} loaded after {} ticks. Processing {} blocks.", chunk.getPos().toString(), ticksPassed, data.positions.size());
+			int randomTickSpeed = world.getGameRules().getInt(GameRules.RANDOM_TICK_SPEED);
 			float expectedTicks = ticksPassed * (randomTickSpeed / 4096.0f);
 			int baseCalls = (int) expectedTicks;
 			float chanceForExtra = expectedTicks - baseCalls;

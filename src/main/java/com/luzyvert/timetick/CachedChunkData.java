@@ -1,10 +1,8 @@
 package com.luzyvert.timetick;
 
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.util.math.BlockPos;
 import java.util.List;
-import java.util.Optional;
 
 public class CachedChunkData implements CachedChunkDataComponent {
 	public long tickTime;
@@ -21,23 +19,23 @@ public class CachedChunkData implements CachedChunkDataComponent {
 	}
 
 	@Override
-	public void readData(ReadView readView) {
-		tickTime = readView.getLong("value", tickTime);
+	public void readFromNbt(NbtCompound nbtCompound) {
+		tickTime = nbtCompound.getLong("value");
 
-		Optional<long[]> posArray = readView.getOptionalLongArray("positions");
+		long[] posArray = nbtCompound.getLongArray("positions");
 		positions.clear();
-		if (posArray.isPresent()) {
-			for (long packed : posArray.get()) {
+		if (posArray != null) {
+			for (long packed : posArray) {
 				positions.add(BlockPos.fromLong(packed));
 			}
 		}
 	}
 
 	@Override
-	public void writeData(WriteView writeView) {
-		writeView.putLong("value", tickTime);
+	public void writeToNbt(NbtCompound nbtCompound) {
+		nbtCompound.putLong("value", tickTime);
 
 		long[] posArray = positions.stream().mapToLong(BlockPos::asLong).toArray();
-		writeView.putLongArray("positions", posArray);
+		nbtCompound.putLongArray("positions", posArray);
 	}
 }
