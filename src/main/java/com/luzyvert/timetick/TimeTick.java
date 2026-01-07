@@ -163,14 +163,18 @@ public class TimeTick implements ModInitializer {
 				for (int z = 0; z < 16; z++) {
 					for (int y = 0; y < 16; y++) {
 						BlockState state = section.getBlockState(x, y, z);
+						Block block = state.getBlock();
 
-						if (shouldTrackBlock(state.getBlock())) {
+						if (shouldTrackBlock(block)) {
 							BlockPos absolutePos = new BlockPos(
 									chunk.getPos().getStartX() + x,
 									startY + y,
 									chunk.getPos().getStartZ() + z
 							);
-							growingBlocks.add(absolutePos);
+							if(block instanceof FarmlandBlock)
+								growingBlocks.addFirst(absolutePos);
+							else
+								growingBlocks.add(absolutePos);
 						}
 					}
 				}
