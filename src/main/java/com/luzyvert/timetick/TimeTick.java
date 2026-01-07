@@ -172,7 +172,7 @@ public class TimeTick implements ModInitializer {
 									chunk.getPos().getStartZ() + z
 							);
 							if(block instanceof FarmlandBlock)
-								growingBlocks.addFirst(absolutePos);
+								growingBlocks.add(0, absolutePos);
 							else
 								growingBlocks.add(absolutePos);
 						}
