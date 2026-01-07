@@ -4,9 +4,12 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.block.*;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ChunkLevelType;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
 import net.minecraft.world.GameRules;
@@ -22,43 +25,40 @@ public class TimeTick implements ModInitializer {
 
 	private static final Queue<Runnable> TASK_QUEUE = new ConcurrentLinkedQueue<>();
 
+	private static final Map<Long, Boolean> SPAWN_CHUNK_MAP = new HashMap<>();
+	private final int spawnChunkRadius = 11;
+	private int tickCounter = 0;
+
 	@Override
 	public void onInitialize() {
 		LOGGER.info("TimeTick initializing");
 
-		ServerChunkEvents.CHUNK_UNLOAD.register(this::SaveChunkTime);
-
-		ServerChunkEvents.CHUNK_LOAD.register(this::TickChunk);
+		ServerChunkEvents.CHUNK_LOAD.register((world, chunk) -> {
+			if(isSpawnChunk(world, chunk.getPos()) && !isSpawnChunkTicking(world, chunk.getPos()))
+				return;
+			TickChunk(world, chunk);
+		});
 
 		ChunkLevelEvents.CHUNK_LEVEL_TYPE_CHANGE.register( (world, chunk, oldLevelType, newLevelType) -> {
 			if(chunk == null)
 				return;
 
-			if(chunk.getPos().x != 0 || chunk.getPos().z != 0) return;
-
-			LOGGER.info("CHUNK_LEVEL_TYPE_CHANGE: {} (Ticking: {}), old: {} -> new: {}", chunk.getPos(), IsBlockTicking(newLevelType), oldLevelType, newLevelType);
+			//LOGGER.info("CHUNK_LEVEL_TYPE_CHANGE: {} (Ticking: {}), old: {} -> new: {}", chunk.getPos(), IsBlockTicking(newLevelType), oldLevelType, newLevelType);
 
 			if(IsBlockTicking(newLevelType)) {
-				TickChunk(world, chunk);
+				if(!IsBlockTicking(oldLevelType))
+					TickChunk(world, chunk);
 				return;
 			}
 
 			SaveChunkTime(world, chunk);
 		});
 
-		ServerTickEvents.START_SERVER_TICK.register(server -> {
-			WorldChunk chunk = server.getOverworld().getChunk(0, 0);
-
-			if(chunk != null)
-			{
-				LOGGER.info("Chunk {} loaded: {} state: {} status: {} entity_ticking: {}",
-						chunk.getPos(), server.getOverworld().isChunkLoaded(0, 0), chunk.getLevelType(), chunk.getStatus(), server.getOverworld().getChunkManager().isTickingFutureReady(chunk.getPos().toLong()));
-			}
-			else
-				LOGGER.info("Chunk [0, 0] is null");
-		});
-
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
+			if (tickCounter++ % 20 == 0) {
+				SpawnChunkLogic(server);
+			}
+
 			if (TASK_QUEUE.isEmpty()) return;
 
 			long startTime = System.nanoTime();
@@ -81,14 +81,75 @@ public class TimeTick implements ModInitializer {
 		});
 	}
 
-	private void SaveChunkTime(ServerWorld world, WorldChunk chunk) {
-		if (IsBlockTicking(chunk.getLevelType())) return;
+	public boolean isSpawnChunk(ServerWorld world, ChunkPos chunkPos) {
+		ChunkPos spawnChunk = new ChunkPos(world.getSpawnPos());
 
-		if(chunk.getPos().x != 0 || chunk.getPos().z != 0) return;
+		int dx = Math.abs(chunkPos.x - spawnChunk.x);
+		int dz = Math.abs(chunkPos.z - spawnChunk.z);
+
+		return dx <= spawnChunkRadius && dz <= spawnChunkRadius;
+	}
+
+	public boolean isSpawnChunkTicking(ServerWorld world, ChunkPos chunkPos)
+	{
+		List<ServerPlayerEntity> players = world.getPlayers();
+
+		for (ServerPlayerEntity player : players) {
+			if (player.squaredDistanceTo(chunkPos.x, player.getY(), chunkPos.z) < 16384) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void SpawnChunkLogic(MinecraftServer server){
+		ServerWorld world = server.getOverworld();
+		ChunkPos spawnCenter = new ChunkPos(world.getSpawnPos());
+
+		List<ServerPlayerEntity> players = world.getPlayers();
+
+		for (int x = -spawnChunkRadius; x <= spawnChunkRadius; x++) {
+			for (int z = -spawnChunkRadius; z <= spawnChunkRadius; z++) {
+
+				long chunkPosLong = ChunkPos.toLong(spawnCenter.x + x, spawnCenter.z + z);
+
+				if (world.shouldTickBlocksInChunk(chunkPosLong)) {
+
+					boolean isRandomTicking = false;
+					boolean prevRandomTicking = SPAWN_CHUNK_MAP.getOrDefault(chunkPosLong, false);
+
+					double chunkX = (spawnCenter.x + x) * 16 + 8;
+					double chunkZ = (spawnCenter.z + z) * 16 + 8;
+
+					for (ServerPlayerEntity player : players) {
+						if (player.squaredDistanceTo(chunkX, player.getY(), chunkZ) < 16384) {
+							isRandomTicking = true;
+							break;
+						}
+					}
+
+					if (prevRandomTicking != isRandomTicking) {
+						ChunkPos pos = new ChunkPos(chunkPosLong);
+
+						if(isRandomTicking)
+							TickChunk(world, world.getChunk(pos.x, pos.z));
+						else
+							SaveChunkTime(world, world.getChunk(pos.x, pos.z));
+
+						SPAWN_CHUNK_MAP.put(chunkPosLong, isRandomTicking);
+					}
+				}
+			}
+		}
+	}
+
+	private void SaveChunkTime(ServerWorld world, WorldChunk chunk) {
+		if (!isSpawnChunk(world, chunk.getPos()) && IsBlockTicking(chunk.getLevelType()))
+			return;
 
 		CachedChunkData data = TimeTickComponents.CHUNK_DATA.get(chunk);
 
-		LOGGER.info("Saving chunk time for {}", chunk.getPos());
+		//LOGGER.info("Saving chunk time for {}", chunk.getPos());
 		List<BlockPos> growingBlocks = new ArrayList<>();
 		ChunkSection[] sections = chunk.getSectionArray();
 
@@ -126,25 +187,19 @@ public class TimeTick implements ModInitializer {
 	}
 
 	private void TickChunk(ServerWorld world, WorldChunk chunk) {
-
-		if(chunk.getPos().x != 0 || chunk.getPos().z != 0) return;
-
 		CachedChunkData data = TimeTickComponents.CHUNK_DATA.get(chunk);
 
 		long currentTick = world.getTime();
 		long lastSavedTime = data.tickTime;
 
 		if (lastSavedTime <= 0) {
-			data.tickTime = currentTick;
 			return;
 		}
 
 		long ticksPassed = currentTick - lastSavedTime;
 
-		data.tickTime = currentTick;
-
 		if (ticksPassed > 0 && !data.positions.isEmpty()) {
-			LOGGER.info("Chunk {} loaded after {} ticks. Processing {} blocks.", chunk.getPos().toString(), ticksPassed, data.positions.size());
+			//LOGGER.info("Chunk {} loaded after {} ticks. Processing {} blocks.", chunk.getPos().toString(), ticksPassed, data.positions.size());
 			int randomTickSpeed = world.getGameRules().getInt(GameRules.RANDOM_TICK_SPEED);
 			float expectedTicks = ticksPassed * (randomTickSpeed / 4096.0f);
 			int baseCalls = (int) expectedTicks;
@@ -154,8 +209,6 @@ public class TimeTick implements ModInitializer {
 
 			for (BlockPos pos : blocksToTick) {
 				TASK_QUEUE.add(() -> {
-					if (!world.isChunkLoaded(pos)) return;
-
 					BlockState currentState = world.getBlockState(pos);
 
 					if (shouldTrackBlock(currentState.getBlock())) {
@@ -176,14 +229,20 @@ public class TimeTick implements ModInitializer {
 				});
 			}
 		}
+
+		data.positions.clear();
+		data.tickTime = -1;
 	}
 
 	private boolean IsBlockTicking(ChunkLevelType type) {
-		return type == ChunkLevelType.BLOCK_TICKING || type == ChunkLevelType.ENTITY_TICKING;
+        return switch (type) {
+            case ENTITY_TICKING, BLOCK_TICKING -> true;
+            default -> false;
+        };
 	}
 
 	private boolean shouldTrackBlock(Block block) {
-		return block instanceof CropBlock
+		return     block instanceof CropBlock
 				|| block instanceof SaplingBlock
 				|| block instanceof StemBlock
 				|| block instanceof CocoaBlock
