@@ -28,15 +28,12 @@ public class TimeTick implements ModInitializer {
 
 		ServerChunkEvents.CHUNK_LEVEL_TYPE_CHANGE.register((world, chunk, oldLevelType, newLevelType) -> {
 			if (IsBlockTicking(newLevelType)) {
-				if (chunk instanceof WorldChunk worldChunk) {
-					TickChunk(world, worldChunk);
-				}
+				if(!IsBlockTicking(oldLevelType))
+					TickChunk(world, chunk);
 				return;
 			}
 
-			if (chunk instanceof WorldChunk worldChunk) {
-				SaveChunkTime(world, worldChunk);
-			}
+			SaveChunkTime(world, chunk);
 		});
 
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -110,13 +107,10 @@ public class TimeTick implements ModInitializer {
 		long lastSavedTime = data.tickTime;
 
 		if (lastSavedTime <= 0) {
-			data.tickTime = currentTick;
 			return;
 		}
 
 		long ticksPassed = currentTick - lastSavedTime;
-
-		data.tickTime = currentTick;
 
 		if (ticksPassed > 0 && !data.positions.isEmpty()) {
 
@@ -151,14 +145,20 @@ public class TimeTick implements ModInitializer {
 				});
 			}
 		}
+
+		data.positions.clear();
+		data.tickTime = -1;
 	}
 
 	private boolean IsBlockTicking(ChunkLevelType type) {
-		return type == ChunkLevelType.BLOCK_TICKING || type == ChunkLevelType.ENTITY_TICKING;
+		return switch (type) {
+			case ENTITY_TICKING, BLOCK_TICKING -> true;
+			default -> false;
+		};
 	}
-
+	
 	private boolean shouldTrackBlock(Block block) {
-		return block instanceof CropBlock
+		return     block instanceof CropBlock
 				|| block instanceof SaplingBlock
 				|| block instanceof StemBlock
 				|| block instanceof CocoaBlock
