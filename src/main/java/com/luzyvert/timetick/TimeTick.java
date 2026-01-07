@@ -64,6 +64,9 @@ public class TimeTick implements ModInitializer {
 
 		CachedChunkData data = TimeTickComponents.CHUNK_DATA.get(chunk);
 
+		if(data.tickTime > 0)
+			return;
+
 		List<BlockPos> growingBlocks = new ArrayList<>();
 		ChunkSection[] sections = chunk.getSectionArray();
 
@@ -77,14 +80,18 @@ public class TimeTick implements ModInitializer {
 				for (int z = 0; z < 16; z++) {
 					for (int y = 0; y < 16; y++) {
 						BlockState state = section.getBlockState(x, y, z);
+						Block block = state.getBlock();
 
-						if (shouldTrackBlock(state.getBlock())) {
+						if (shouldTrackBlock(block)) {
 							BlockPos absolutePos = new BlockPos(
 									chunk.getPos().getStartX() + x,
 									startY + y,
 									chunk.getPos().getStartZ() + z
 							);
-							growingBlocks.add(absolutePos);
+							if(block instanceof FarmlandBlock)
+								growingBlocks.addFirst(absolutePos);
+							else
+								growingBlocks.add(absolutePos);
 						}
 					}
 				}
@@ -123,8 +130,6 @@ public class TimeTick implements ModInitializer {
 
 			for (BlockPos pos : blocksToTick) {
 				TASK_QUEUE.add(() -> {
-					if (!world.isChunkLoaded(pos)) return;
-
 					BlockState currentState = world.getBlockState(pos);
 
 					if (shouldTrackBlock(currentState.getBlock())) {
@@ -156,7 +161,7 @@ public class TimeTick implements ModInitializer {
 			default -> false;
 		};
 	}
-	
+
 	private boolean shouldTrackBlock(Block block) {
 		return     block instanceof CropBlock
 				|| block instanceof SaplingBlock
