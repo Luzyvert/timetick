@@ -34,7 +34,9 @@ public class TimeTick implements ModInitializer {
 			if(chunk == null)
 				return;
 
-			//LOGGER.info("CHUNK_LEVEL_TYPE_CHANGE: {} (Ticking: {}), old: {} -> new: {}", chunk.getPos(), IsBlockTicking(newLevelType), oldLevelType, newLevelType);
+			if(chunk.getPos().x != 0 || chunk.getPos().z != 0) return;
+
+			LOGGER.info("CHUNK_LEVEL_TYPE_CHANGE: {} (Ticking: {}), old: {} -> new: {}", chunk.getPos(), IsBlockTicking(newLevelType), oldLevelType, newLevelType);
 
 			if(IsBlockTicking(newLevelType)) {
 				TickChunk(world, chunk);
@@ -42,6 +44,18 @@ public class TimeTick implements ModInitializer {
 			}
 
 			SaveChunkTime(world, chunk);
+		});
+
+		ServerTickEvents.START_SERVER_TICK.register(server -> {
+			WorldChunk chunk = server.getOverworld().getChunk(0, 0);
+
+			if(chunk != null)
+			{
+				LOGGER.info("Chunk {} loaded: {} state: {} status: {} entity_ticking: {}",
+						chunk.getPos(), server.getOverworld().isChunkLoaded(0, 0), chunk.getLevelType(), chunk.getStatus(), server.getOverworld().getChunkManager().isTickingFutureReady(chunk.getPos().toLong()));
+			}
+			else
+				LOGGER.info("Chunk [0, 0] is null");
 		});
 
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -69,6 +83,8 @@ public class TimeTick implements ModInitializer {
 
 	private void SaveChunkTime(ServerWorld world, WorldChunk chunk) {
 		if (IsBlockTicking(chunk.getLevelType())) return;
+
+		if(chunk.getPos().x != 0 || chunk.getPos().z != 0) return;
 
 		CachedChunkData data = TimeTickComponents.CHUNK_DATA.get(chunk);
 
@@ -110,6 +126,9 @@ public class TimeTick implements ModInitializer {
 	}
 
 	private void TickChunk(ServerWorld world, WorldChunk chunk) {
+
+		if(chunk.getPos().x != 0 || chunk.getPos().z != 0) return;
+
 		CachedChunkData data = TimeTickComponents.CHUNK_DATA.get(chunk);
 
 		long currentTick = world.getTime();
