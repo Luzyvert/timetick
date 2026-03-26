@@ -9,7 +9,7 @@
 	],
 	"contact": {
 		"homepage": "https://modrinth.com/project/timetick",
-		"sources": "https://github.com/Luzyvert/timetick/tree/1.21.11"
+		"sources": "https://github.com/Luzyvert/timetick/tree/26.1"
 	},
 	"license": "MIT",
 	"icon": "assets/timetick/icon.png",
@@ -17,6 +17,9 @@
 	"entrypoints": {
 		"main": [
 			"com.luzyvert.timetick.TimeTick"
+		],
+		"client": [
+			"com.luzyvert.timetick.TimeTickClient"
 		],
 		"fabric-datagen": [
 			"com.luzyvert.timetick.TimeTickDataGenerator"
@@ -31,10 +34,14 @@
 		]
 	},
 	"mixins": [
-		"timetick.mixins.json"
+		"timetick.mixins.json",
+		{
+			"config": "timetick.client.mixins.json",
+			"environment": "client"
+		}
 	],
 	"depends": {
-		"fabricloader": ">=0.18.4",
+		"fabricloader": ">=0.18.5",
 		"minecraft": "~26.1",
 		"java": ">=25",
 		"fabric-api": "*"

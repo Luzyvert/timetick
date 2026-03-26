@@ -3,17 +3,20 @@ package com.luzyvert.timetick;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.block.*;
-import net.minecraft.server.world.ChunkLevelType;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.chunk.ChunkSection;
-import net.minecraft.world.chunk.WorldChunk;
-import net.minecraft.world.rule.GameRules;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.FullChunkStatus;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.block.*;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class TimeTick implements ModInitializer {
@@ -26,14 +29,14 @@ public class TimeTick implements ModInitializer {
 	public void onInitialize() {
 		LOGGER.info("TimeTick initializing");
 
-		ServerChunkEvents.CHUNK_LEVEL_TYPE_CHANGE.register((world, chunk, oldLevelType, newLevelType) -> {
-			if (IsBlockTicking(newLevelType)) {
-				if(!IsBlockTicking(oldLevelType))
-					TickChunk(world, chunk);
+		ServerChunkEvents.FULL_CHUNK_STATUS_CHANGE.register((level, chunk, oldStatus, newStatus) -> {
+			if (IsBlockTicking(newStatus)) {
+				if(!IsBlockTicking(oldStatus))
+					TickChunk(level, chunk);
 				return;
 			}
 
-			SaveChunkTime(world, chunk);
+			SaveChunkTime(level, chunk);
 		});
 
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -59,8 +62,8 @@ public class TimeTick implements ModInitializer {
 		});
 	}
 
-	private void SaveChunkTime(ServerWorld world, WorldChunk chunk) {
-		if (IsBlockTicking(chunk.getLevelType())) return;
+	private void SaveChunkTime(ServerLevel level, LevelChunk chunk) {
+		if (IsBlockTicking(chunk.getFullStatus())) return;
 
 		CachedChunkData data = TimeTickComponents.CHUNK_DATA.get(chunk);
 
@@ -68,13 +71,13 @@ public class TimeTick implements ModInitializer {
 			return;
 
 		List<BlockPos> growingBlocks = new ArrayList<>();
-		ChunkSection[] sections = chunk.getSectionArray();
+		LevelChunkSection[] sections = chunk.getSections();
 
 		for (int i = 0; i < sections.length; i++) {
-			ChunkSection section = sections[i];
-			if (section == null || section.isEmpty() || !section.hasRandomTicks()) continue;
+			LevelChunkSection section = sections[i];
+			if (section == null || section.hasOnlyAir() || !section.isRandomlyTicking()) continue;
 
-			int startY = chunk.getBottomY() + (i * 16);
+			int startY = chunk.getMinY() + (i * 16);
 
 			for (int x = 0; x < 16; x++) {
 				for (int z = 0; z < 16; z++) {
@@ -84,9 +87,9 @@ public class TimeTick implements ModInitializer {
 
 						if (shouldTrackBlock(block)) {
 							BlockPos absolutePos = new BlockPos(
-									chunk.getPos().getStartX() + x,
+									chunk.getPos().getMinBlockX() + x,
 									startY + y,
-									chunk.getPos().getStartZ() + z
+									chunk.getPos().getMinBlockZ() + z
 							);
 							if(block instanceof FarmlandBlock)
 								growingBlocks.addFirst(absolutePos);
@@ -99,7 +102,7 @@ public class TimeTick implements ModInitializer {
 		}
 
 		if (!growingBlocks.isEmpty()) {
-			data.tickTime = world.getTime();
+			data.tickTime = level.getGameTime();
 			data.positions.clear();
 			data.positions.addAll(growingBlocks);
 
@@ -107,10 +110,10 @@ public class TimeTick implements ModInitializer {
 		}
 	}
 
-	private void TickChunk(ServerWorld world, WorldChunk chunk) {
+	private void TickChunk(ServerLevel level, LevelChunk chunk) {
 		CachedChunkData data = TimeTickComponents.CHUNK_DATA.get(chunk);
 
-		long currentTick = world.getTime();
+		long currentTick = level.getGameTime();
 		long lastSavedTime = data.tickTime;
 
 		if (lastSavedTime <= 0) {
@@ -121,7 +124,7 @@ public class TimeTick implements ModInitializer {
 
 		if (ticksPassed > 0 && !data.positions.isEmpty()) {
 
-			int randomTickSpeed = world.getGameRules().getValue(GameRules.RANDOM_TICK_SPEED);
+			int randomTickSpeed = level.getGameRules().get(GameRules.RANDOM_TICK_SPEED);
 			float expectedTicks = ticksPassed * (randomTickSpeed / 4096.0f);
 			int baseCalls = (int) expectedTicks;
 			float chanceForExtra = expectedTicks - baseCalls;
@@ -130,18 +133,18 @@ public class TimeTick implements ModInitializer {
 
 			for (BlockPos pos : blocksToTick) {
 				TASK_QUEUE.add(() -> {
-					BlockState currentState = world.getBlockState(pos);
+					BlockState currentState = level.getBlockState(pos);
 
 					if (shouldTrackBlock(currentState.getBlock())) {
 						int calls = baseCalls;
-						if (world.random.nextFloat() < chanceForExtra) {
+						if (level.getRandom().nextFloat() < chanceForExtra) {
 							calls++;
 						}
 
 						for (int i = 0; i < calls; i++) {
-							BlockState stateInLoop = world.getBlockState(pos);
+							BlockState stateInLoop = level.getBlockState(pos);
 							if (shouldTrackBlock(stateInLoop.getBlock())) {
-								stateInLoop.randomTick(world, pos, world.random);
+								stateInLoop.randomTick(level, pos, level.getRandom());
 							} else {
 								break;
 							}
@@ -155,7 +158,7 @@ public class TimeTick implements ModInitializer {
 		data.tickTime = -1;
 	}
 
-	private boolean IsBlockTicking(ChunkLevelType type) {
+	private boolean IsBlockTicking(FullChunkStatus type) {
 		return switch (type) {
 			case ENTITY_TICKING, BLOCK_TICKING -> true;
 			default -> false;
@@ -163,7 +166,7 @@ public class TimeTick implements ModInitializer {
 	}
 
 	private boolean shouldTrackBlock(Block block) {
-		return     block instanceof CropBlock
+		return block instanceof CropBlock
 				|| block instanceof SaplingBlock
 				|| block instanceof StemBlock
 				|| block instanceof CocoaBlock

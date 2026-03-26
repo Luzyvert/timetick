@@ -1,8 +1,9 @@
 package com.luzyvert.timetick;
 
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -16,28 +17,23 @@ public class CachedChunkData implements CachedChunkDataComponent {
 	}
 
 	@Override
-	public long getTickTime() {
-		return tickTime;
-	}
+	public void readData(ValueInput input) {
+		this.tickTime = input.getLongOr("value", 0L);
 
-	@Override
-	public void readData(ReadView readView) {
-		tickTime = readView.getLong("value", tickTime);
-
-		Optional<long[]> posArray = readView.getOptionalLongArray("positions");
-		positions.clear();
+		Optional<long[]> posArray = input.getOptionalLongArray("positions");
 		if (posArray.isPresent()) {
+			this.positions.clear();
 			for (long packed : posArray.get()) {
-				positions.add(BlockPos.fromLong(packed));
+				this.positions.add(BlockPos.of(packed));
 			}
 		}
 	}
 
 	@Override
-	public void writeData(WriteView writeView) {
-		writeView.putLong("value", tickTime);
+	public void writeData(ValueOutput output) {
+		output.putLong("value", this.tickTime);
 
-		long[] posArray = positions.stream().mapToLong(BlockPos::asLong).toArray();
-		writeView.putLongArray("positions", posArray);
+		long[] posArray = this.positions.stream().mapToLong(BlockPos::asLong).toArray();
+		output.putLongArray("positions", posArray);
 	}
 }
