@@ -18,27 +18,16 @@
 		"main": [
 			"com.luzyvert.timetick.TimeTick"
 		],
-		"client": [
-			"com.luzyvert.timetick.TimeTickClient"
-		],
-		"fabric-datagen": [
-			"com.luzyvert.timetick.TimeTickDataGenerator"
-		],
 		"cardinal-components-chunk": [
 			"com.luzyvert.timetick.TimeTickChunkComponents"
 		]
-	},
-	"custom": {
-		"cardinal-components": [
-			"timetick:cached_chunk_data"
-		]
-	},
+		},
+		"custom": {
+			"cardinal-components": [
+				"timetick:cached_chunk_data"
+			]
+		},
 	"mixins": [
-		"timetick.mixins.json",
-		{
-			"config": "timetick.client.mixins.json",
-			"environment": "client"
-		}
 	],
 	"depends": {
 		"fabricloader": ">=0.19.3",
